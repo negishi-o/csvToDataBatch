@@ -18,7 +18,7 @@ public class EmpItemProcessor implements ItemProcessor<Employee, Employee>{
 		log.info("Processing.... {}", item);
 		item.setJobTitle(item.getJobTitle().toUpperCase());
 		
-		return null;
+		return item;
 	}
 
 }

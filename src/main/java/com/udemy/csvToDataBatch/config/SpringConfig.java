@@ -4,9 +4,14 @@ import java.nio.charset.StandardCharsets;
 
 import javax.sql.DataSource;
 
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.StepScope;
+import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.database.BeanPropertyItemSqlParameterSourceProvider;
 import org.springframework.batch.item.database.JdbcBatchItemWriter;
@@ -24,7 +29,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import com.udemy.csvToDataBatch.model.Employee;
 
+import lombok.extern.slf4j.Slf4j;
+
 @Configuration
+@Slf4j
 public class SpringConfig {
 	private final JobLauncher jobLauncher;
 	private final JobRepository jobRepository;
@@ -57,7 +65,7 @@ public class SpringConfig {
 		reader.setResource(inputCSV);
 		reader.setLinesToSkip(1);
 		reader.setEncoding(StandardCharsets.UTF_8.name());
-		
+
 		//CSVと列とDBのカラムをマッピングするインスタンスここで、準備
 		//まずは、対象テーブルをインスタンスにセット
 		BeanWrapperFieldSetMapper<Employee> beanWrapperFiledSetMapper =
@@ -86,7 +94,10 @@ public class SpringConfig {
 	@Qualifier("EmpItemProcessor")
 	public ItemProcessor<Employee, Employee> empItemProcessor;
 	 
+	@Bean
+	@StepScope
 	public JdbcBatchItemWriter<Employee> jdbcItemWriter(){
+		
 		
 		//バインドしたSQLを利用する場合に、このインスタンスを利用する
 		BeanPropertyItemSqlParameterSourceProvider<Employee> provider =
@@ -94,11 +105,31 @@ public class SpringConfig {
 		
 		JdbcBatchItemWriter<Employee> writer =
 				new JdbcBatchItemWriter<Employee>();
-		
+
 		writer.setDataSource(dataSource);
 		writer.setItemSqlParameterSourceProvider(provider);
 		writer.setSql(INSERT_EMP_SQL);
 		
 		return writer;
 	}
+	
+	@Bean
+	public Step chunkStep() {
+		return new StepBuilder("EmpItemProcessor", jobRepository)
+				.<Employee, Employee>chunk(1, transactionManager)
+				.reader(csvItemReader())
+				.processor(empItemProcessor)
+				.writer(jdbcItemWriter())
+				.build();
+				
+	}
+	
+	@Bean
+	public Job chunkJob() {
+		return new JobBuilder("EmpItemJob", jobRepository)
+				.incrementer(new RunIdIncrementer())//採番を付けて、バッチ処理の整合性を保つ
+				.start(chunkStep())//Stepで作成したファンクションを呼び出す
+				.build();
+	}
+	
 }
